@@ -38,7 +38,7 @@ export default function TradePage() {
   });
 
   useEffect(() => {
-    document.title = `${marketName} — Serum`;
+    document.title = marketName ? `${marketName} — Serum` : 'Serum';
   }, [marketName]);
 
   const changeOrderRef = useRef();
@@ -58,10 +58,14 @@ export default function TradePage() {
   const width = dimensions?.width;
   const componentProps = {
     onChangeOrderRef: (ref) => (changeOrderRef.current = ref),
-    onPrice: (price) =>
-      changeOrderRef.current && changeOrderRef.current({ price }),
-    onSize: (size) =>
-      changeOrderRef.current && changeOrderRef.current({ size }),
+    onPrice: useCallback(
+      (price) => changeOrderRef.current && changeOrderRef.current({ price }),
+      [],
+    ),
+    onSize: useCallback(
+      (size) => changeOrderRef.current && changeOrderRef.current({ size }),
+      [],
+    ),
   };
   const getComponent = useCallback(() => {
     if (handleDeprecated) {
@@ -209,7 +213,7 @@ const RenderNormal = ({ onChangeOrderRef, onPrice, onSize }) => {
   return (
     <Row
       style={{
-        minHeight: '750px',
+        minHeight: '800px',
         flexWrap: 'nowrap',
       }}
     >
@@ -236,13 +240,13 @@ const RenderSmall = ({ onChangeOrderRef, onPrice, onSize }) => {
     <>
       <Row
         style={{
-          height: '750px',
+          height: '800px',
         }}
       >
         <Col flex="auto" style={{ height: '100%', display: 'flex' }}>
           <Orderbook
             smallScreen={true}
-            depth={12}
+            depth={13}
             onPrice={onPrice}
             onSize={onSize}
           />
@@ -278,7 +282,11 @@ const RenderSmaller = ({ onChangeOrderRef, onPrice, onSize }) => {
           <StandaloneBalancesDisplay />
         </Col>
       </Row>
-      <Row style={{ minHeight: '500px' }}>
+      <Row
+        style={{
+          height: '500px',
+        }}
+      >
         <Col xs={24} sm={12} style={{ height: '100%', display: 'flex' }}>
           <Orderbook smallScreen={true} onPrice={onPrice} onSize={onSize} />
         </Col>
