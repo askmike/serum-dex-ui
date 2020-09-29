@@ -28,7 +28,7 @@
     "styled-components": "^5.1.1"
   },
   "scripts": {
-    "predeploy": "yarn build",
+    "predeploy": "git pull --ff-only && yarn build",
     "deploy": "gh-pages -d build",
     "start": "craco start",
     "build": "REACT_APP_GIT_SHA=`git rev-parse --short HEAD` REACT_APP_GIT_DATE=`git log -1 --date=format:\"%Y/%m/%d\" --format=\"%ad\"` craco build",
