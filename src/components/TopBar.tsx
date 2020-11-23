@@ -47,7 +47,6 @@ const EXTERNAL_LINKS = {
   '/explorer': 'https://explorer.solana.com',
   '/srm-faq': 'https://projectserum.com/srm-faq',
   '/swap': 'https://serum-swap.folkvang.io'
-  '/swap': 'https://swap.projectserum.com',
 };
 
 export default function TopBar() {
