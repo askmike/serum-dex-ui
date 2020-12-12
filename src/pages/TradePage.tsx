@@ -1,26 +1,29 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Col, Popover, Row, Select, Typography, Button } from 'antd';
+import { Button, Col, Popover, Row, Select, Typography } from 'antd';
 import styled from 'styled-components';
 import Orderbook from '../components/Orderbook';
 import UserInfoTable from '../components/UserInfoTable';
 import StandaloneBalancesDisplay from '../components/StandaloneBalancesDisplay';
 import {
+  getMarketInfos,
+  getTradePageUrl,
+  MarketProvider,
   useMarket,
   useMarketsList,
   useUnmigratedDeprecatedMarkets,
-  getMarketInfos,
 } from '../utils/markets';
 import TradeForm from '../components/TradeForm';
 import TradesTable from '../components/TradesTable';
 import LinkAddress from '../components/LinkAddress';
 import DeprecatedMarketsInstructions from '../components/DeprecatedMarketsInstructions';
 import {
+  DeleteOutlined,
   InfoCircleOutlined,
   PlusCircleOutlined,
-  DeleteOutlined,
 } from '@ant-design/icons';
 import CustomMarketDialog from '../components/CustomMarketDialog';
 import { notify } from '../utils/notifications';
+import { useHistory, useParams } from 'react-router-dom';
 
 const { Option, OptGroup } = Select;
 
@@ -35,6 +38,28 @@ const Wrapper = styled.div`
 `;
 
 export default function TradePage() {
+  const { marketAddress } = useParams();
+  useEffect(() => {
+    if (marketAddress) {
+      localStorage.setItem('marketAddress', JSON.stringify(marketAddress));
+    }
+  }, [marketAddress]);
+  const history = useHistory();
+  function setMarketAddress(address) {
+    history.push(getTradePageUrl(address));
+  }
+
+  return (
+    <MarketProvider
+      marketAddress={marketAddress}
+      setMarketAddress={setMarketAddress}
+    >
+      <TradePageInner />
+    </MarketProvider>
+  );
+}
+
+function TradePageInner() {
   const {
     market,
     marketName,
@@ -83,7 +108,7 @@ export default function TradePage() {
       [],
     ),
   };
-  const getComponent = useCallback(() => {
+  const component = (() => {
     if (handleDeprecated) {
       return (
         <DeprecatedMarketsPage
@@ -97,7 +122,7 @@ export default function TradePage() {
     } else {
       return <RenderNormal {...componentProps} />;
     }
-  }, [width, componentProps, handleDeprecated]);
+  })();
 
   const onAddCustomMarket = (customMarket) => {
     const marketInfo = getMarketInfos(customMarkets).some(
@@ -176,7 +201,7 @@ export default function TradePage() {
             </React.Fragment>
           )}
         </Row>
-        {getComponent()}
+        {component}
       </Wrapper>
     </>
   );

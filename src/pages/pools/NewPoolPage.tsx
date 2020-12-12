@@ -1,11 +1,19 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Form, Input, Tooltip, Typography } from 'antd';
+import {
+  AutoComplete,
+  Button,
+  Form,
+  Input,
+  Switch,
+  Tooltip,
+  Typography,
+} from 'antd';
 import { PublicKey } from '@solana/web3.js';
 import { useConnection } from '../../utils/connection';
 import FloatingElement from '../../components/layout/FloatingElement';
 import styled from 'styled-components';
 import { useWallet } from '../../utils/wallet';
-import { sendSignedTransaction, signTransaction } from '../../utils/send';
+import { sendSignedTransaction, signTransactions } from '../../utils/send';
 import { useMintInput } from '../../components/useMintInput';
 import { PoolTransactions } from '@project-serum/pool';
 import { useTokenAccounts } from '../../utils/markets';
@@ -28,7 +36,20 @@ const AddRemoveTokenButtons = styled.div`
   margin-bottom: 16px;
 `;
 
-const DEFAULT_PROGRAM_ID = '8qZoqDMXTfLZz6BYrDfD5Cuy65JKkaNwktb54hj1yaoK';
+const SIMPLE_POOL_PROGRAM_ID = 'AuQRLHwApDLinkrAZCkGqQ9TB7bH7KhpfCHtm6iYNHUz';
+const ADMIN_CONTROLLED_POOL_PROGRAM_ID =
+  '4RtoceJET4bF5mWXCp2iaZmssEPS7Z43XRaYEyA8TCkB';
+const DEFAULT_PROGRAM_ID = ADMIN_CONTROLLED_POOL_PROGRAM_ID;
+const PROGRAM_ID_OPTIONS = [
+  {
+    label: `Simple Pool (${SIMPLE_POOL_PROGRAM_ID})`,
+    value: SIMPLE_POOL_PROGRAM_ID,
+  },
+  {
+    label: `Admin-Controlled Pool (${ADMIN_CONTROLLED_POOL_PROGRAM_ID})`,
+    value: ADMIN_CONTROLLED_POOL_PROGRAM_ID,
+  },
+];
 
 export default function NewPoolPage() {
   const connection = useConnection();
@@ -40,9 +61,18 @@ export default function NewPoolPage() {
     { valid: false },
     { valid: false },
   ]);
+  const [adminControlled, setAdminControlled] = useState(false);
   const [tokenAccounts] = useTokenAccounts();
   const [submitting, setSubmitting] = useState(false);
   const [newPoolAddress, setNewPoolAddress] = useState<PublicKey | null>(null);
+
+  useEffect(() => {
+    if (programId === SIMPLE_POOL_PROGRAM_ID) {
+      setAdminControlled(false);
+    } else if (programId === ADMIN_CONTROLLED_POOL_PROGRAM_ID) {
+      setAdminControlled(true);
+    }
+  }, [programId]);
 
   const canSubmit =
     connected &&
@@ -61,7 +91,7 @@ export default function NewPoolPage() {
       const assets = initialAssets as ValidInitialAsset[];
       const [
         poolAddress,
-        transactions,
+        transactionsAndSigners,
       ] = await PoolTransactions.initializeSimplePool({
         connection,
         programId: new PublicKey(programId),
@@ -83,12 +113,15 @@ export default function NewPoolPage() {
           }
           return found.pubkey;
         }),
+        additionalAccounts: adminControlled
+          ? [{ pubkey: wallet.publicKey, isSigner: false, isWritable: false }]
+          : [],
       });
-      const signed = await Promise.all(
-        transactions.map(({ transaction, signers }) =>
-          signTransaction({ transaction, wallet, signers, connection }),
-        ),
-      );
+      const signed = await signTransactions({
+        transactionsAndSigners,
+        wallet,
+        connection,
+      });
       for (let signedTransaction of signed) {
         await sendSignedTransaction({ signedTransaction, connection });
       }
@@ -96,7 +129,8 @@ export default function NewPoolPage() {
     } catch (e) {
       console.warn(e);
       notify({
-        message: 'Error creating new pool: ' + e.message,
+        message: 'Error creating new pool',
+        description: e.message,
         type: 'error',
       });
     } finally {
@@ -130,9 +164,10 @@ export default function NewPoolPage() {
             name="programId"
             initialValue={DEFAULT_PROGRAM_ID}
           >
-            <Input
+            <AutoComplete
               value={programId}
-              onChange={(e) => setProgramId(e.target.value)}
+              onChange={(value) => setProgramId(value)}
+              options={PROGRAM_ID_OPTIONS}
             />
           </Form.Item>
           <Form.Item
@@ -172,6 +207,23 @@ export default function NewPoolPage() {
           {initialAssets.map((asset, i) => (
             <AssetInput setInitialAssets={setInitialAssets} index={i} key={i} />
           ))}
+          <Form.Item
+            label={
+              <Tooltip title="Whether the assets in the pool can be controlled by the pool admin.">
+                Admin Controlled
+              </Tooltip>
+            }
+            name="adminControlled"
+          >
+            <Switch
+              checked={adminControlled}
+              onChange={(checked) => setAdminControlled(checked)}
+              disabled={
+                programId === SIMPLE_POOL_PROGRAM_ID ||
+                programId === ADMIN_CONTROLLED_POOL_PROGRAM_ID
+              }
+            />
+          </Form.Item>
           <Form.Item label=" " colon={false}>
             <Button
               type="primary"

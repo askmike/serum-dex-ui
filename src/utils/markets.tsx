@@ -53,8 +53,9 @@ export function useMarketsList() {
   return USE_MARKETS.filter(({ deprecated }) => !deprecated);
 }
 
-export function useAllMarkets(customMarkets) {
+export function useAllMarkets() {
   const connection = useConnection();
+  const { customMarkets } = useCustomMarkets();
 
   const getAllMarkets = async () => {
     const markets: Array<{
@@ -212,14 +213,15 @@ export function getMarketDetails(
   };
 }
 
-export function MarketProvider({ children }) {
-  const [marketAddress, setMarketAddress] = useLocalStorageState(
-    'marketAddress',
-    DEFAULT_MARKET?.address.toBase58(),
-  );
+export function useCustomMarkets() {
   const [customMarkets, setCustomMarkets] = useLocalStorageState<
     CustomMarketInfo[]
   >('customMarkets', []);
+  return { customMarkets, setCustomMarkets };
+}
+
+export function MarketProvider({ marketAddress, setMarketAddress, children }) {
+  const { customMarkets, setCustomMarkets } = useCustomMarkets();
 
   const address = marketAddress && new PublicKey(marketAddress);
   const connection = useConnection();
@@ -282,6 +284,17 @@ export function MarketProvider({ children }) {
       {children}
     </MarketContext.Provider>
   );
+}
+
+export function getTradePageUrl(marketAddress?: string) {
+  if (!marketAddress) {
+    const saved = localStorage.getItem('marketAddress');
+    if (saved) {
+      marketAddress = JSON.parse(saved);
+    }
+    marketAddress = marketAddress || DEFAULT_MARKET?.address.toBase58() || '';
+  }
+  return `/market/${marketAddress}`;
 }
 
 export function useSelectedTokenAccounts(): [
@@ -611,8 +624,7 @@ export function useFillsForAllMarkets(limit = 100) {
   const { connected, wallet } = useWallet();
 
   const connection = useConnection();
-  // todo: add custom markets
-  const allMarkets = useAllMarkets([]);
+  const allMarkets = useAllMarkets();
 
   async function getFillsForAllMarkets() {
     let fills: Trade[] = [];
@@ -667,8 +679,7 @@ export function useFillsForAllMarkets(limit = 100) {
 export function useAllOpenOrdersAccounts() {
   const { wallet, connected } = useWallet();
   const connection = useConnection();
-  const { customMarkets } = useMarket();
-  const marketInfos = getMarketInfos(customMarkets);
+  const marketInfos = useMarketInfos();
   const programIds = [
     ...new Set(marketInfos.map((info) => info.programId.toBase58())),
   ].map((stringProgramId) => new PublicKey(stringProgramId));
@@ -692,7 +703,7 @@ export function useAllOpenOrdersAccounts() {
       connection,
       connected,
       wallet?.publicKey?.toBase58(),
-      customMarkets.length,
+      marketInfos.length,
       (programIds || []).length,
     ),
     { refreshInterval: _SLOW_REFRESH_INTERVAL },
@@ -705,8 +716,7 @@ export function useAllOpenOrdersBalances() {
     loadedOpenOrdersAccounts,
   ] = useAllOpenOrdersAccounts();
   const [mintInfos, mintInfosConnected] = useMintInfos();
-  const { customMarkets } = useMarket();
-  const [allMarkets] = useAllMarkets(customMarkets);
+  const [allMarkets] = useAllMarkets();
   if (!loadedOpenOrdersAccounts || !mintInfosConnected) {
     return {};
   }
@@ -772,8 +782,7 @@ export function useAllOpenOrders(): {
     openOrdersAccounts,
     openOrdersAccountsConnected,
   ] = useAllOpenOrdersAccounts();
-  const { customMarkets } = useMarket();
-  const [marketInfos, marketInfosConnected] = useAllMarkets(customMarkets);
+  const [marketInfos, marketInfosConnected] = useAllMarkets();
   const openOrdersAccountsByAddress: {
     [marketAddress: string]: OpenOrders[];
   } = {};
@@ -992,10 +1001,7 @@ export function useGetOpenOrdersForDeprecatedMarkets(): {
   refreshOpenOrders: () => void;
 } {
   const { connected, wallet } = useWallet();
-  const [customMarkets] = useLocalStorageState<CustomMarketInfo[]>(
-    'customMarkets',
-    [],
-  );
+  const { customMarkets } = useCustomMarkets();
   const connection = useConnection();
   const marketsAndOrders = useUnmigratedDeprecatedMarkets();
   const marketsList =
@@ -1140,7 +1146,7 @@ export function getMarketInfos(
 }
 
 export function useMarketInfos() {
-  const { customMarkets } = useMarket();
+  const { customMarkets } = useCustomMarkets();
   return getMarketInfos(customMarkets);
 }
 
