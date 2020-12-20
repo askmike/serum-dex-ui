@@ -331,6 +331,7 @@ export async function placeOrder({
   wallet,
   baseCurrencyAccount,
   quoteCurrencyAccount,
+  feeDiscountPubkey = undefined,
 }: {
   side: 'buy' | 'sell';
   price: number;
@@ -341,6 +342,7 @@ export async function placeOrder({
   wallet: Wallet;
   baseCurrencyAccount: PublicKey | undefined;
   quoteCurrencyAccount: PublicKey | undefined;
+  feeDiscountPubkey: PublicKey | undefined;
 }) {
   let formattedMinOrderSize =
     market?.minOrderSize?.toFixed(getDecimalCount(market.minOrderSize)) ||
@@ -437,20 +439,24 @@ export async function placeOrder({
     price,
     size,
     orderType,
+    feeDiscountPubkey: feeDiscountPubkey || null,
   };
   console.log(params);
 
   const matchOrderstransaction = market.makeMatchOrdersTransaction(5);
   transaction.add(matchOrderstransaction);
+  const startTime = getUnixTs();
   let {
     transaction: placeOrderTx,
     signers: placeOrderSigners,
   } = await market.makePlaceOrderTransaction(
     connection,
     params,
-    10_000,
-    10_000,
+    120_000,
+    120_000,
   );
+  const endTime = getUnixTs();
+  console.log(`Creating order transaction took ${endTime - startTime}`);
   transaction.add(placeOrderTx);
   transaction.add(market.makeMatchOrdersTransaction(5));
   signers.push(...placeOrderSigners);
@@ -614,7 +620,7 @@ export async function listMarket({
   return market.publicKey;
 }
 
-const getUnixTs = () => {
+export const getUnixTs = () => {
   return new Date().getTime() / 1000;
 };
 
