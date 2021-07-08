@@ -14,8 +14,8 @@ import { Button, Modal } from 'antd';
 import {
   WalletAdapter,
   LedgerWalletAdapter,
-  SolongWalletAdapter,
   PhantomWalletAdapter,
+  SolletExtensionAdapter,
   MathWalletAdapter,
 } from '../wallet-adapters';
 
@@ -28,16 +28,16 @@ export const WALLET_PROVIDERS = [
     icon: `${ASSET_URL}/sollet.svg`,
   },
   {
+    name: 'Sollet Extension',
+    url: 'https://www.sollet.io/extension',
+    icon: `${ASSET_URL}/sollet.svg`,
+    adapter: SolletExtensionAdapter as any,
+  },
+  {
     name: 'Ledger',
     url: 'https://www.ledger.com',
     icon: `${ASSET_URL}/ledger.svg`,
     adapter: LedgerWalletAdapter,
-  },
-  {
-    name: 'Solong',
-    url: 'https://www.solong.com',
-    icon: `${ASSET_URL}/solong.png`,
-    adapter: SolongWalletAdapter,
   },
   {
     name: 'Phantom',
@@ -50,7 +50,7 @@ export const WALLET_PROVIDERS = [
     url: 'https://www.mathwallet.org',
     icon: `${ASSET_URL}/mathwallet.svg`,
     adapter: MathWalletAdapter,
-  }
+  },
 ];
 
 const WalletContext = React.createContext<null | WalletContextValues>(null);
@@ -66,24 +66,40 @@ export function WalletProvider({ children }) {
     [providerUrl],
   );
 
-  const wallet = useMemo(
-    function () {
-      if (provider) {
-        return new (provider.adapter || Wallet)(
+  let [wallet, setWallet] = useState<WalletAdapter | undefined>(undefined);
+
+  useEffect(() => {
+    if (provider) {
+      const updateWallet = () => {
+        // hack to also update wallet synchronously in case it disconnects
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        wallet = new (provider.adapter || Wallet)(
           providerUrl,
           endpoint,
         ) as WalletAdapter;
+        setWallet(wallet);
+      };
+
+      if (document.readyState !== 'complete') {
+        // wait to ensure that browser extensions are loaded
+        const listener = () => {
+          updateWallet();
+          window.removeEventListener('load', listener);
+        };
+        window.addEventListener('load', listener);
+        return () => window.removeEventListener('load', listener);
+      } else {
+        updateWallet();
       }
-    },
-    [provider, providerUrl, endpoint],
-  );
+    }
+  }, [provider, providerUrl, endpoint]);
 
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     if (wallet) {
       wallet.on('connect', () => {
-        if (wallet.publicKey) {
+        if (wallet?.publicKey) {
           console.log('connected');
           localStorage.removeItem('feeDiscountKey');
           setConnected(true);
@@ -118,7 +134,7 @@ export function WalletProvider({ children }) {
 
     return () => {
       setConnected(false);
-      if (wallet) {
+      if (wallet && wallet.connected) {
         wallet.disconnect();
         setConnected(false);
       }

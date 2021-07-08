@@ -24,6 +24,8 @@ import {
 import CustomMarketDialog from '../components/CustomMarketDialog';
 import { notify } from '../utils/notifications';
 import { useHistory, useParams } from 'react-router-dom';
+import { nanoid } from 'nanoid';
+import { TVChartContainer } from '../components/TradingView';
 
 const { Option, OptGroup } = Select;
 
@@ -250,7 +252,7 @@ function MarketSelector({
           {customMarkets.map(({ address, name }, i) => (
             <Option
               value={address}
-              key={address}
+              key={nanoid()}
               name={name}
               style={{
                 padding: '10px',
@@ -296,7 +298,7 @@ function MarketSelector({
           .map(({ address, name, deprecated }, i) => (
             <Option
               value={address.toBase58()}
-              key={address}
+              key={nanoid()}
               name={name}
               style={{
                 padding: '10px',
@@ -334,8 +336,13 @@ const RenderNormal = ({ onChangeOrderRef, onPrice, onSize }) => {
         flexWrap: 'nowrap',
       }}
     >
-      <Col flex="auto" style={{ height: '100%', display: 'flex' }}>
-        <UserInfoTable />
+      <Col flex="auto" style={{ height: '50vh' }}>
+        <Row style={{ height: '100%' }}>
+          <TVChartContainer />
+        </Row>
+        <Row style={{ height: '70%' }}>
+          <UserInfoTable />
+        </Row>
       </Col>
       <Col flex={'360px'} style={{ height: '100%' }}>
         <Orderbook smallScreen={false} onPrice={onPrice} onSize={onSize} />
@@ -355,6 +362,9 @@ const RenderNormal = ({ onChangeOrderRef, onPrice, onSize }) => {
 const RenderSmall = ({ onChangeOrderRef, onPrice, onSize }) => {
   return (
     <>
+      <Row style={{ height: '30vh' }}>
+        <TVChartContainer />
+      </Row>
       <Row
         style={{
           height: '900px',
@@ -391,6 +401,9 @@ const RenderSmall = ({ onChangeOrderRef, onPrice, onSize }) => {
 const RenderSmaller = ({ onChangeOrderRef, onPrice, onSize }) => {
   return (
     <>
+      <Row style={{ height: '50vh' }}>
+        <TVChartContainer />
+      </Row>
       <Row>
         <Col xs={24} sm={12} style={{ height: '100%', display: 'flex' }}>
           <TradeForm style={{ flex: 1 }} setChangeOrderRef={onChangeOrderRef} />

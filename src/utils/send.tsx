@@ -13,11 +13,17 @@ import {
   Transaction,
   TransactionSignature,
 } from '@solana/web3.js';
+import {
+  Token,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+} from '@solana/spl-token';
 import BN from 'bn.js';
 import {
   DexInstructions,
   Market,
-  OpenOrders, parseInstructionErrorResponse,
+  OpenOrders,
+  parseInstructionErrorResponse,
   TOKEN_MINTS,
   TokenInstructions,
 } from '@project-serum/serum';
@@ -38,30 +44,28 @@ export async function createTokenAccountTransaction({
   mintPublicKey: PublicKey;
 }): Promise<{
   transaction: Transaction;
-  signer: Account;
   newAccountPubkey: PublicKey;
 }> {
-  const newAccount = new Account();
+  const ata = await Token.getAssociatedTokenAddress(
+    ASSOCIATED_TOKEN_PROGRAM_ID,
+    TOKEN_PROGRAM_ID,
+    mintPublicKey,
+    wallet.publicKey,
+  );
   const transaction = new Transaction();
-  const instruction = SystemProgram.createAccount({
-    fromPubkey: wallet.publicKey,
-    newAccountPubkey: newAccount.publicKey,
-    lamports: await connection.getMinimumBalanceForRentExemption(165),
-    space: 165,
-    programId: TokenInstructions.TOKEN_PROGRAM_ID,
-  });
-  transaction.add(instruction);
   transaction.add(
-    TokenInstructions.initializeAccount({
-      account: newAccount.publicKey,
-      mint: mintPublicKey,
-      owner: wallet.publicKey,
-    }),
+    Token.createAssociatedTokenAccountInstruction(
+      ASSOCIATED_TOKEN_PROGRAM_ID,
+      TOKEN_PROGRAM_ID,
+      mintPublicKey,
+      ata,
+      wallet.publicKey,
+      wallet.publicKey,
+    ),
   );
   return {
     transaction,
-    signer: newAccount,
-    newAccountPubkey: newAccount.publicKey,
+    newAccountPubkey: ata,
   };
 }
 
@@ -72,6 +76,9 @@ export async function settleFunds({
   wallet,
   baseCurrencyAccount,
   quoteCurrencyAccount,
+  sendNotification = true,
+  usdcRef = undefined,
+  usdtRef = undefined,
 }: {
   market: Market;
   openOrders: OpenOrders;
@@ -79,6 +86,9 @@ export async function settleFunds({
   wallet: WalletAdapter;
   baseCurrencyAccount: TokenAccount;
   quoteCurrencyAccount: TokenAccount;
+  sendNotification?: boolean;
+  usdcRef?: PublicKey;
+  usdtRef?: PublicKey;
 }): Promise<string | undefined> {
   if (
     !market ||
@@ -87,12 +97,13 @@ export async function settleFunds({
     !openOrders ||
     (!baseCurrencyAccount && !quoteCurrencyAccount)
   ) {
-    notify({ message: 'Not connected' });
+    if (sendNotification) {
+      notify({ message: 'Not connected' });
+    }
     return;
   }
 
   let createAccountTransaction: Transaction | undefined;
-  let createAccountSigner: Account | undefined;
   let baseCurrencyAccountPubkey = baseCurrencyAccount?.pubkey;
   let quoteCurrencyAccountPubkey = quoteCurrencyAccount?.pubkey;
 
@@ -104,7 +115,6 @@ export async function settleFunds({
     });
     baseCurrencyAccountPubkey = result?.newAccountPubkey;
     createAccountTransaction = result?.transaction;
-    createAccountSigner = result?.signer;
   }
   if (!quoteCurrencyAccountPubkey) {
     const result = await createTokenAccountTransaction({
@@ -114,28 +124,19 @@ export async function settleFunds({
     });
     quoteCurrencyAccountPubkey = result?.newAccountPubkey;
     createAccountTransaction = result?.transaction;
-    createAccountSigner = result?.signer;
   }
   let referrerQuoteWallet: PublicKey | null = null;
   if (market.supportsReferralFees) {
     const usdt = TOKEN_MINTS.find(({ name }) => name === 'USDT');
     const usdc = TOKEN_MINTS.find(({ name }) => name === 'USDC');
-    if (
-      process.env.REACT_APP_USDT_REFERRAL_FEES_ADDRESS &&
-      usdt &&
-      market.quoteMintAddress.equals(usdt.address)
-    ) {
-      referrerQuoteWallet = new PublicKey(
-        process.env.REACT_APP_USDT_REFERRAL_FEES_ADDRESS,
-      );
+    if (usdtRef && usdt && market.quoteMintAddress.equals(usdt.address)) {
+      referrerQuoteWallet = usdtRef;
     } else if (
-      process.env.REACT_APP_USDC_REFERRAL_FEES_ADDRESS &&
+      usdcRef &&
       usdc &&
       market.quoteMintAddress.equals(usdc.address)
     ) {
-      referrerQuoteWallet = new PublicKey(
-        process.env.REACT_APP_USDC_REFERRAL_FEES_ADDRESS,
-      );
+      referrerQuoteWallet = usdcRef;
     }
   }
   const {
@@ -153,16 +154,14 @@ export async function settleFunds({
     createAccountTransaction,
     settleFundsTransaction,
   ]);
-  let signers = createAccountSigner
-    ? [...settleFundsSigners, createAccountSigner]
-    : settleFundsSigners;
 
   return await sendTransaction({
     transaction,
-    signers,
+    signers: settleFundsSigners,
     wallet,
     connection,
     sendingMessage: 'Settling funds...',
+    sendNotification,
   });
 }
 
@@ -224,6 +223,13 @@ export async function settleAllFunds({
           // @ts-ignore
           m._decoded?.ownAddress?.equals(openOrdersAccount.market),
         );
+        if (
+          openOrdersAccount.baseTokenFree.isZero() &&
+          openOrdersAccount.quoteTokenFree.isZero()
+        ) {
+          // nothing to settle for this market.
+          return null;
+        }
         const baseMint = market?.baseMintAddress;
         const quoteMint = market?.quoteMintAddress;
 
@@ -398,7 +404,6 @@ export async function placeOrder({
   if (!baseCurrencyAccount) {
     const {
       transaction: createAccountTransaction,
-      signer: createAccountSigners,
       newAccountPubkey,
     } = await createTokenAccountTransaction({
       connection,
@@ -406,13 +411,11 @@ export async function placeOrder({
       mintPublicKey: market.baseMintAddress,
     });
     transaction.add(createAccountTransaction);
-    signers.push(createAccountSigners);
     baseCurrencyAccount = newAccountPubkey;
   }
   if (!quoteCurrencyAccount) {
     const {
       transaction: createAccountTransaction,
-      signer: createAccountSigners,
       newAccountPubkey,
     } = await createTokenAccountTransaction({
       connection,
@@ -420,7 +423,6 @@ export async function placeOrder({
       mintPublicKey: market.quoteMintAddress,
     });
     transaction.add(createAccountTransaction);
-    signers.push(createAccountSigners);
     quoteCurrencyAccount = newAccountPubkey;
   }
 
@@ -635,6 +637,7 @@ export async function sendTransaction({
   sentMessage = 'Transaction sent',
   successMessage = 'Transaction confirmed',
   timeout = DEFAULT_TIMEOUT,
+  sendNotification = true,
 }: {
   transaction: Transaction;
   wallet: WalletAdapter;
@@ -644,6 +647,7 @@ export async function sendTransaction({
   sentMessage?: string;
   successMessage?: string;
   timeout?: number;
+  sendNotification?: boolean;
 }) {
   const signedTransaction = await signTransaction({
     transaction,
@@ -658,6 +662,7 @@ export async function sendTransaction({
     sentMessage,
     successMessage,
     timeout,
+    sendNotification,
   });
 }
 
@@ -717,6 +722,7 @@ export async function sendSignedTransaction({
   sentMessage = 'Transaction sent',
   successMessage = 'Transaction confirmed',
   timeout = DEFAULT_TIMEOUT,
+  sendNotification = true,
 }: {
   signedTransaction: Transaction;
   connection: Connection;
@@ -724,17 +730,22 @@ export async function sendSignedTransaction({
   sentMessage?: string;
   successMessage?: string;
   timeout?: number;
+  sendNotification?: boolean;
 }): Promise<string> {
   const rawTransaction = signedTransaction.serialize();
   const startTime = getUnixTs();
-  notify({ message: sendingMessage });
+  if (sendNotification) {
+    notify({ message: sendingMessage });
+  }
   const txid: TransactionSignature = await connection.sendRawTransaction(
     rawTransaction,
     {
       skipPreflight: true,
     },
   );
-  notify({ message: sentMessage, type: 'success', txid });
+  if (sendNotification) {
+    notify({ message: sentMessage, type: 'success', txid });
+  }
 
   console.log('Started awaiting confirmation for', txid);
 
@@ -771,8 +782,14 @@ export async function sendSignedTransaction({
         }
       }
       let parsedError;
-      if (typeof simulateResult.err == 'object' && "InstructionError" in simulateResult.err) {
-        const parsedErrorInfo = parseInstructionErrorResponse(signedTransaction, simulateResult.err["InstructionError"]);
+      if (
+        typeof simulateResult.err == 'object' &&
+        'InstructionError' in simulateResult.err
+      ) {
+        const parsedErrorInfo = parseInstructionErrorResponse(
+          signedTransaction,
+          simulateResult.err['InstructionError'],
+        );
         parsedError = parsedErrorInfo.error;
       } else {
         parsedError = JSON.stringify(simulateResult.err);
@@ -783,7 +800,9 @@ export async function sendSignedTransaction({
   } finally {
     done = true;
   }
-  notify({ message: successMessage, type: 'success', txid });
+  if (sendNotification) {
+    notify({ message: successMessage, type: 'success', txid });
+  }
 
   console.log('Latency', txid, getUnixTs() - startTime);
   return txid;
